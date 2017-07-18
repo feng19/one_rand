@@ -8,23 +8,70 @@
 
 %% API
 -export([
-    create/4
+    create/5
 ]).
 
-create(Module, Count, MaxMultiple, Tid) ->
-    Forms = forms(Module, Count, MaxMultiple, Tid),
+create(Module, Count, MaxMultiple, Alg, Tid) ->
+    Forms = forms(Module, Count, MaxMultiple, Alg, Tid),
 %%    io:format("~ts~n", [erl_prettypr:format(erl_syntax:form_list(Forms))]),
-    compile_and_load_forms(Forms, [verbose, report_errors]).
+    compile_and_load_forms(Forms, [report_errors]).
 
-forms(Module, Count, MaxMultiple, Tid) ->
+uniform_forms(exs64) ->
+    [
+        ?function(uniform, [
+            ?clause([], none, [
+                ?match(?var('V'), ?apply(rand, [])),
+                ?infix(?var('V'), '/', ?abstract(18446744073709551616))
+            ])
+        ]),
+        ?function(uniform, [
+            ?clause([?var('Max')], none, [
+                ?match(?var('V'), ?apply(rand, [])),
+                ?infix(?infix(?var('V'), 'rem', ?var('Max')), '+', ?abstract(1))
+            ])
+        ])
+    ];
+uniform_forms(exsplus) ->
+    [
+        ?function(uniform, [
+            ?clause([], none, [
+                ?match(?var('V'), ?apply(rand, [])),
+                ?infix(?var('V'), '/', ?abstract(288230376151711744))
+            ])
+        ]),
+        ?function(uniform, [
+            ?clause([?var('Max')], none, [
+                ?match(?var('V'), ?apply(rand, [])),
+                ?infix(?infix(?var('V'), 'rem', ?var('Max')), '+', ?abstract(1))
+            ])
+        ])
+    ];
+uniform_forms(exs1024) ->
+    [
+        ?function(uniform, [
+            ?clause([], none, [
+                ?match(?var('V'), ?apply(rand, [])),
+                ?infix(?var('V'), '/', ?abstract(18446744073709551616))
+            ])
+        ]),
+        ?function(uniform, [
+            ?clause([?var('Max')], none, [
+                ?match(?var('V'), ?apply(rand, [])),
+                ?infix(?infix(?var('V'), 'rem', ?var('Max')), '+', ?abstract(1))
+            ])
+        ])
+    ].
+
+forms(Module, Count, MaxMultiple, Alg, Tid) ->
     MaxCount = Count * MaxMultiple,
     Forms = [
         %% -module(Module).
         ?attribute(module, [?atom(Module)]),
-        %% -export([rand/0]).
-        ?attribute(export, [?list([
-            ?arity_qualifier(rand, 0)
-        ])]),
+        %% -export([uniform/0, uniform/1, rand/0]).
+        ?export_all([{uniform, 0}, {uniform, 1}, {rand, 0}])
+    ] ++ uniform_forms(Alg) ++ [
+%%        -compile({inline, [{rand, 0}]}).
+        ?attribute(compile, [?tuple([?atom(inline), ?list([?tuple([?atom(rand), ?abstract(0)])])])]),
 %%        rand() ->
 %%            RandId = ets:update_counter(Tid, rand_id, {2, 1, 100000 * 3, 1}),
 %%            Rand = ets:lookup_element(Tid, RandId, 2),
@@ -33,7 +80,6 @@ forms(Module, Count, MaxMultiple, Tid) ->
 %%                _ -> ok
 %%            end,
 %%            Rand.
-
         ?function(rand, [
             ?clause([], none, [
                 ?match(?var('RandId'), ?apply(ets, update_counter, [?abstract(Tid), ?atom(rand_id),
@@ -41,7 +87,7 @@ forms(Module, Count, MaxMultiple, Tid) ->
                 ?match(?var('Rand'), ?apply(ets, lookup_element, [?abstract(Tid), ?var('RandId'), ?abstract(2)])),
                 ?cases(?infix(?var('RandId'), 'rem', ?abstract(Count)), [
                     ?clause([?abstract(0)], none, [
-                        ?apply(one_rand_srv, notice, [?abstract(Module)])
+                        ?apply(one_rand_srv, create_next, [?abstract(Module)])
                     ]),
                     ?clause([?var('_')], none, [?abstract(ok)])
                 ]),
